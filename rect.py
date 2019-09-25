@@ -48,7 +48,7 @@ class Rectangle:
 
     def __contains__(self, c):
         x, y = c
-        return (self.x1 <= x and x <= self.x2) and (self.y1 <= y and y <= self.y2)
+        return (self.x1 <= x and x <= self.x2) and (self.y1 <= y and y < self.y2)
 
     def __iter__(self):
         yield self.x1
