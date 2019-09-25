@@ -1,0 +1,216 @@
+import curses
+import traceback
+import road
+
+
+class Dirs(object):
+    _LEFT = 0
+    _TOP = 1
+    _RIGHT = 2
+    _DOWN = 3
+
+    def doDir(_DIR):
+        return (_DIR + 1) % 4
+
+    def __str__(_DIR):
+        if _DIR == Dirs._LEFT:
+            return "LEFT   "
+        elif _DIR == Dirs._RIGHT:
+            return "RIGHT  "
+        elif _DIR == Dirs._TOP:
+            return "UP     "
+        elif _DIR == Dirs._DOWN:
+            return "DOWN   "
+
+
+class ObjMap(object):
+    m = []
+
+    def __init__(self, x, y):
+        self.m = [[' ' for _ in range(x)] for _ in range(y)]
+
+    def setCH(self, x, y, c):
+        self.m[y][x] = c
+
+    def getCH(self, x, y):
+        return self.m[y][x]
+
+
+class Car(object):
+    x = 0
+    y = 0
+    _x = 0
+    _y = 0
+    cur = None
+
+    _ch = '\0'
+
+    def __init__(self, x, y):
+        # self.x, _x = x, x
+        # self.y, _y = y, y
+        self.x = x
+        self.y = y
+
+    def isMove(self):
+        return self._y != self.y or self._x != self.x
+
+    def _update(self):
+        self._x = self.x
+        self._y = self.y
+
+    def update(self, init=False):
+        if init:
+            return
+
+        if self.isMove():
+            if self._ch != '\0':
+                self.cur.addch(self._x, self._y, self._ch)
+                self.cur.pad.move(20, 20)
+                self.cur.pad.addch(20, 20, self._ch)
+            self._ch = self.cur.getch(self.x, self.y)
+            self.cur.addch(self.x, self.y, '@')
+
+        self._update()
+
+
+class SimpleCar(Car):
+    road = None
+    roadChange = False
+    direction = 2
+
+    def __init__(self, x, y):
+        super().__init__(x, y)
+
+    def _doMove(self, dX, dY):
+        _dX = 0
+        _dY = 0
+        if self.road.onRoad(self.x + dX, self.y+dY):
+            _dX += dX
+            _dY += dY
+        else:
+            for i in self.road.connectors:
+                if (self.x + dX, self.y+dY) in i.getRoad(self.road).getRect():
+                    self.road = i.getRoad(self.road)
+                    _dX += dX * 2
+                    _dY += dY * 2
+                    self.roadChange = True
+                    break
+        return _dX, _dY
+
+    def _update(self):
+        super()._update()
+        dX = 0
+        dY = 0
+        if self.direction == Dirs._TOP:
+            dtX, dtY = self._doMove(0, -1)
+        elif self.direction == Dirs._DOWN:
+            dtX, dtY = self._doMove(0, 1)
+        elif self.direction == Dirs._RIGHT:
+            dtX, dtY = self._doMove(1, 0)
+        elif self.direction == Dirs._LEFT:
+            dtX, dtY = self._doMove(-1, 0)
+        else:
+            dtX, dtY = 0, 0
+        dX += dtX
+        dY += dtY
+        self.x += dX
+        self.y += dY
+        if self.roadChange:
+            self.direction = Dirs.doDir(self.direction)
+            self.roadChange = False
+
+    def update(self, init=False):
+        super().update()
+        if init:
+            return
+        self.cur.pad.move(21, 20)
+        self.cur.pad.addstr(21, 20, Dirs.__str__(self.direction))
+
+
+class Cur(object):
+    _class_update_list = [Car, road.Road]
+    objs = []
+
+    def __init__(self):
+        self.objs = []
+
+    def init(self):
+        self.stdscr = curses.initscr()
+        if not self.stdscr:
+            print("Unable to init curses")
+            exit(1)
+
+        curses.noecho()
+        curses.cbreak()
+        curses.curs_set(False)
+        self.stdscr.keypad(True)
+
+    def do(self, func, efunc):
+        e = ""
+        try:
+            for i in Cur._class_update_list:
+                i.cur = self
+            func(self)
+        except Exception as ex:
+            e = traceback.format_exc()
+        finally:
+            for i in Cur._class_update_list:
+                i.cur = None
+            efunc(self)
+        print(e)
+
+    def makekek(self):
+        self.pad = curses.newpad(100, 100)
+        self.omap = ObjMap(100, 100)
+
+        for i in self.objs:
+            i.update(init=True)
+
+        _fps = 0
+        while True:
+            self.pad.refresh(0, 0, 0, 0, 40, 100)
+            _fps = (_fps + 1) % 40
+            if _fps == 0:
+                for i in self.objs:
+                    i.update()
+            curses.napms(10)
+
+    def addch(self, x, y, ch):
+        self.pad.addch(y, x, ch)
+        self.omap.setCH(x, y, ch)
+
+    def getch(self, x, y):
+        return self.omap.getCH(x, y)
+
+    def stop(self):
+        curses.nocbreak()
+        curses.echo()
+        self.stdscr.keypad(False)
+        curses.curs_set(True)
+        curses.endwin()
+        print("Finish")
+        print('\n'.join([''.join(['{:4}'.format(item) for item in row]) for row in a.omap.m]))
+
+
+a = Cur()
+r0 = road.Road(0, 0, 10, 2, False)
+r1 = road.Road(10, 0, 10, 2, True)
+# r2 = road.Road(1, 3, 2, 15)
+# r3 = road.Road(5, 10, 12, 2)
+c0 = SimpleCar(4, 1)
+co0 = road.SimpleConnector(r0, r1)
+# co1 = road.SimpleConnector(r0, r2)
+# co2 = road.SimpleConnector(r1, r3)
+# co3 = road.SimpleConnector(r2, r3)
+
+c0.road = r0
+c0.direction = Dirs._RIGHT
+a.objs.append(r0)
+a.objs.append(r1)
+# a.objs.append(r2)
+# a.objs.append(r3)
+# a.objs.append(c0)
+
+a.init()
+a.do(Cur.makekek, Cur.stop)
+print(1337)
